@@ -1,4 +1,4 @@
-name: Cloudflare Snippets Auto Check
+name: Cloudflare Snippets Full Auto Check
 
 on:
   schedule:
@@ -13,28 +13,24 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: sudo apt-get update && sudo apt-get install -y jq git
 
-      - name: Check Snippets for all domains
+      - name: Generate Snippets Status
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
-          OUTPUT="snippets_status.md"
-          echo "| Domain | Zone ID | Snippets Available | Max Snippets |" > $OUTPUT
-          echo "|--------|---------|-----------------|--------------|" >> $OUTPUT
+          echo "| Domain | Zone ID | Snippets Available | Max Snippets |" > snippets_status.md
+          echo "|--------|---------|-----------------|--------------|" >> snippets_status.md
 
-          while read -r DOMAIN; do
-            # 获取 Zone ID
-            ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
-              -H "Authorization: Bearer $CF_API_TOKEN" \
-              -H "Content-Type: application/json")
-            
-            ZONE_ID=$(echo "$ZONE_RESPONSE" | jq -r '.result[0].id')
+          # 获取所有域名
+          ZONES=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?per_page=50" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" | jq -c '.result[] | {id: .id, name: .name}')
 
-            if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ]; then
-              echo "| $DOMAIN | - | ❌ | - |" >> $OUTPUT
-              continue
-            fi
+          # 遍历每个域名
+          echo "$ZONES" | while read -r zone; do
+            DOMAIN=$(echo "$zone" | jq -r '.name')
+            ZONE_ID=$(echo "$zone" | jq -r '.id')
 
             # 查询 Snippets 权限
             RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/rulesets/capabilities" \
@@ -50,7 +46,15 @@ jobs:
               SNIPPETS_COUNT="-"
             fi
 
-            echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" >> $OUTPUT
-          done < domains.txt
+            echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" >> snippets_status.md
+          done
 
-          echo "Results saved to $OUTPUT"
+      - name: Commit and Push results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add snippets_status.md
+          git commit -m "Update Cloudflare Snippets status [skip ci]" || echo "No changes to commit"
+          git push
