@@ -21,8 +21,8 @@ jobs:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
         run: |
           OUTPUT_FILE="snippets_status.md"
-          echo "| Domain | Zone ID | Snippets Available | Max Snippets |" > $OUTPUT_FILE
-          echo "|--------|---------|-----------------|--------------|" >> $OUTPUT_FILE
+          echo "| Domain | Snippets Available | Max Snippets |" > $OUTPUT_FILE
+          echo "|--------|-----------------|--------------|" >> $OUTPUT_FILE
 
           PAGE=1
           PER_PAGE=50
