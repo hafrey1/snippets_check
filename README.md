@@ -29,7 +29,7 @@
 - `CF_API_EMAIL`：你的 Cloudflare 邮箱  
 - `CF_API_KEY`：你的 Cloudflare 全局 API Key
 
-⭐workflow 权限
+⭐打开workflow 读写权限
 
 你可以限制是否允许 Fork 或其他用户触发你的 Actions。
 
@@ -44,9 +44,11 @@
 🔧 Workflow permissions
 
 Read repository contents permission（默认）
+
 运行 workflow 时只能读内容
 
 Read and write permissions
+
 Workflow 运行时可读写仓库，例如自动提交代码
 
 选择后点 Save。
