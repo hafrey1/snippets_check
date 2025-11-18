@@ -1,4 +1,4 @@
-name: Cloudflare Snippets Check (Email + Global API Key)
+name: Cloudflare Snippets Check (Safe Email + Global API Key)
 
 on:
   schedule:
@@ -45,15 +45,17 @@ jobs:
               exit 1
             fi
 
-            # 检查 result 是否存在且非空
-            RESULT_COUNT=$(echo "$ZONES" | jq '.result | length')
-            if [ "$(echo "$ZONES" | jq '.result == null')" = "true" ] || [ "$RESULT_COUNT" -eq 0 ]; then
-              echo "No more zones found or permission issue, exiting loop."
+            # 保存 result 数组到变量
+            ZONES_ARRAY=$(echo "$ZONES" | jq -c '.result[] | {id: .id, name: .name}')
+
+            # 检查是否为空
+            if [ -z "$ZONES_ARRAY" ]; then
+              echo "⚠️ No more zones found on this page. Exiting loop."
               break
             fi
 
-            # 遍历当前页所有域名
-            echo "$ZONES" | jq -c '.result[] | {id: .id, name: .name}' | while read -r zone; do
+            # 遍历每个域名
+            for zone in $ZONES_ARRAY; do
               DOMAIN=$(echo "$zone" | jq -r '.name')
               ZONE_ID=$(echo "$zone" | jq -r '.id')
 
@@ -75,9 +77,11 @@ jobs:
             done
 
             # 如果当前页数量小于每页数量，说明是最后一页
+            RESULT_COUNT=$(echo "$ZONES" | jq '.result | length')
             if [ "$RESULT_COUNT" -lt "$PER_PAGE" ]; then
               break
             fi
+
             PAGE=$((PAGE + 1))
           done
 
