@@ -29,7 +29,6 @@ jobs:
           TEMP_DIR=$(mktemp -d)
 
           while :; do
-            # 获取当前页域名
             ZONES=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?per_page=$PER_PAGE&page=$PAGE" \
               -H "X-Auth-Email: $CF_API_EMAIL" \
               -H "X-Auth-Key: $CF_API_KEY" \
@@ -48,7 +47,6 @@ jobs:
               break
             fi
 
-            # 并发处理每个域名
             for zone in $ZONES_ARRAY; do
               (
                 DOMAIN=$(echo "$zone" | jq -r '.name')
@@ -64,11 +62,17 @@ jobs:
                   -H "Content-Type: application/json")
 
                 SNIPPETS_COUNT=$(echo "$RESPONSE" | jq -r '.result[]? | select(.id=="rulesets.snippets_rule_max") | .value')
+
+                # 判断 Snippets 可用状态
                 if [ -z "$SNIPPETS_COUNT" ] || [ "$SNIPPETS_COUNT" == "null" ]; then
                   SNIPPETS_COUNT="Unlimited"
                   AVAILABLE="✅"
                 else
-                  AVAILABLE="✅"
+                  if [ "$SNIPPETS_COUNT" -gt 0 ]; then
+                    AVAILABLE="✅"
+                  else
+                    AVAILABLE="❌"
+                  fi
                 fi
 
                 TMP_FILE=$(mktemp "$TEMP_DIR/${ZONE_ID}_XXXX.md")
@@ -77,7 +81,6 @@ jobs:
             done
             wait
 
-            # 合并临时文件到最终输出
             if compgen -G "$TEMP_DIR/*.md" > /dev/null; then
               cat "$TEMP_DIR"/*.md >> $OUTPUT_FILE
               rm -f "$TEMP_DIR"/*.md
@@ -98,6 +101,7 @@ jobs:
           git add snippets_status.md
           git commit -m "Update Cloudflare Snippets status [parallel max masked] [skip ci]" || echo "No changes to commit"
           git push origin HEAD
+
           
       - name: Delete workflow runs
       # 删除工作流记录/只保留1天记录
