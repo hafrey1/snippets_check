@@ -1,12 +1,12 @@
-name: Cloudflare Snippets Check (Safe Email + Global API Key)
+name: Cloudflare Snippets Check (Parallel)
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # 每天中午12点执行
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 jobs:
-  check_snippets:
+  check_snippets_parallel:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -15,7 +15,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq git
 
-      - name: Generate Snippets Status
+      - name: Generate Snippets Status in Parallel
         env:
           CF_API_EMAIL: ${{ secrets.CF_API_EMAIL }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
@@ -26,6 +26,7 @@ jobs:
 
           PAGE=1
           PER_PAGE=50
+          TEMP_DIR=$(mktemp -d)
 
           while :; do
             # 获取当前页域名
@@ -34,54 +35,54 @@ jobs:
               -H "X-Auth-Key: $CF_API_KEY" \
               -H "Content-Type: application/json")
 
-            # 调试输出
-            echo "DEBUG: Current page API response:"
-            echo "$ZONES" | jq
-
-            # 检查 API 是否成功
             SUCCESS=$(echo "$ZONES" | jq -r '.success')
             if [ "$SUCCESS" != "true" ]; then
-              echo "❌ API call failed. Please check your email/key and permissions."
+              echo "❌ API call failed."
+              echo "$ZONES" | jq
               exit 1
             fi
 
-            # 保存 result 数组到变量
             ZONES_ARRAY=$(echo "$ZONES" | jq -c '.result[] | {id: .id, name: .name}')
-
-            # 检查是否为空
             if [ -z "$ZONES_ARRAY" ]; then
-              echo "⚠️ No more zones found on this page. Exiting loop."
+              echo "⚠️ No more zones found."
               break
             fi
 
-            # 遍历每个域名
-            for zone in $ZONES_ARRAY; do
-              DOMAIN=$(echo "$zone" | jq -r '.name')
-              ZONE_ID=$(echo "$zone" | jq -r '.id')
+            # 并发处理每个域名
+            echo "$ZONES_ARRAY" | while read -r zone; do
+              (
+                DOMAIN=$(echo "$zone" | jq -r '.name')
+                ZONE_ID=$(echo "$zone" | jq -r '.id')
 
-              RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/rulesets/capabilities" \
-                -H "X-Auth-Email: $CF_API_EMAIL" \
-                -H "X-Auth-Key: $CF_API_KEY" \
-                -H "Content-Type: application/json")
+                RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/rulesets/capabilities" \
+                  -H "X-Auth-Email: $CF_API_EMAIL" \
+                  -H "X-Auth-Key: $CF_API_KEY" \
+                  -H "Content-Type: application/json")
 
-              SNIPPETS_COUNT=$(echo "$RESPONSE" | jq -r '.result[] | select(.id=="rulesets.snippets_rule_max") | .value')
+                SNIPPETS_COUNT=$(echo "$RESPONSE" | jq -r '.result[] | select(.id=="rulesets.snippets_rule_max") | .value')
+                if [ -n "$SNIPPETS_COUNT" ]; then
+                  AVAILABLE="✅"
+                else
+                  AVAILABLE="❌"
+                  SNIPPETS_COUNT="-"
+                fi
 
-              if [ -n "$SNIPPETS_COUNT" ]; then
-                AVAILABLE="✅"
-              else
-                AVAILABLE="❌"
-                SNIPPETS_COUNT="-"
-              fi
-
-              echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" >> $OUTPUT_FILE
+                # 写入临时文件，避免多进程写冲突
+                echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" >> "$TEMP_DIR/$ZONE_ID.md"
+              ) &
             done
 
-            # 如果当前页数量小于每页数量，说明是最后一页
+            # 等待所有后台任务完成
+            wait
+
+            # 合并临时文件到最终输出
+            cat "$TEMP_DIR"/*.md >> $OUTPUT_FILE
+            rm -f "$TEMP_DIR"/*.md
+
             RESULT_COUNT=$(echo "$ZONES" | jq '.result | length')
             if [ "$RESULT_COUNT" -lt "$PER_PAGE" ]; then
               break
             fi
-
             PAGE=$((PAGE + 1))
           done
 
@@ -92,5 +93,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add snippets_status.md
-          git commit -m "Update Cloudflare Snippets status [skip ci]" || echo "No changes to commit"
+          git commit -m "Update Cloudflare Snippets status [parallel] [skip ci]" || echo "No changes to commit"
           git push
