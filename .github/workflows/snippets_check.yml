@@ -15,21 +15,34 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq git curl
 
-      - name: Generate Snippets Status (Parallel Safe with Max)
+      - name: Generate Snippets Status (Parallel Safe with Max + Domain Hidden)
         env:
           CF_API_EMAIL: ${{ secrets.CF_API_EMAIL }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
         run: |
           OUTPUT_FILE="snippets_status.md"
-          echo "| Domain | Zone ID | Snippets Available | Max Snippets |" > $OUTPUT_FILE
-          echo "|--------|---------|--------------------|--------------|" >> $OUTPUT_FILE
+          echo "| Domain | Snippets Available | Max Snippets |" > $OUTPUT_FILE
+          echo "|--------|--------------------|--------------|" >> $OUTPUT_FILE
 
           PAGE=1
           PER_PAGE=50
           TEMP_DIR=$(mktemp -d)
 
+          # 半隐藏域名函数
+          hide_domain() {
+            local domain="$1"
+            local name="${domain%%.*}"    # 提取主域名
+            local tld="${domain#*.}"      # 提取后缀
+            local len=${#name}
+            if [ $len -le 2 ]; then
+              echo "$name***.$tld"
+            else
+              local half_len=$((len/2))
+              echo "${name:0:half_len}****.$tld"
+            fi
+          }
+
           while :; do
-            # 获取当前页域名
             ZONES=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?per_page=$PER_PAGE&page=$PAGE" \
               -H "X-Auth-Email: $CF_API_EMAIL" \
               -H "X-Auth-Key: $CF_API_KEY" \
@@ -42,14 +55,12 @@ jobs:
               exit 1
             fi
 
-            # 安全处理 result 数组
             ZONES_ARRAY=$(echo "$ZONES" | jq -c '.result // empty | .[] | {id: .id, name: .name}')
             if [ -z "$ZONES_ARRAY" ]; then
               echo "⚠️ No zones found on this page"
               break
             fi
 
-            # 并发处理每个域名
             for zone in $ZONES_ARRAY; do
               (
                 DOMAIN=$(echo "$zone" | jq -r '.name')
@@ -60,7 +71,6 @@ jobs:
                   -H "X-Auth-Key: $CF_API_KEY" \
                   -H "Content-Type: application/json")
 
-                # 获取 Max Snippets，如果为空则显示 Unlimited
                 SNIPPETS_COUNT=$(echo "$RESPONSE" | jq -r '.result[]? | select(.id=="rulesets.snippets_rule_max") | .value')
                 if [ -z "$SNIPPETS_COUNT" ] || [ "$SNIPPETS_COUNT" == "null" ]; then
                   SNIPPETS_COUNT="Unlimited"
@@ -69,14 +79,14 @@ jobs:
                   AVAILABLE="✅"
                 fi
 
-                # 安全写入临时文件
-                TMP_FILE=$(mktemp "$TEMP_DIR/${ZONE_ID}_XXXX.md")
-                echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" > "$TMP_FILE"
+                SAFE_DOMAIN=$(echo "$DOMAIN" | sed 's/[^a-zA-Z0-9]/_/g')
+                TMP_FILE=$(mktemp "$TEMP_DIR/${SAFE_DOMAIN}_XXXX.md")
+                HIDDEN_DOMAIN=$(hide_domain "$DOMAIN")
+                echo "| $HIDDEN_DOMAIN | $AVAILABLE | $SNIPPETS_COUNT |" > "$TMP_FILE"
               ) &
             done
             wait
 
-            # 合并临时文件到最终输出
             if compgen -G "$TEMP_DIR/*.md" > /dev/null; then
               cat "$TEMP_DIR"/*.md >> $OUTPUT_FILE
               rm -f "$TEMP_DIR"/*.md
