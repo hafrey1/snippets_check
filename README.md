@@ -25,7 +25,7 @@
 ## 使用方法
 
 ### 1️⃣ 准备 GitHub Secrets
-
+- Settings --> secrets and variables --> Actions 
 - `CF_API_EMAIL`：你的 Cloudflare 邮箱  
 - `CF_API_KEY`：你的 Cloudflare 全局 API Key
 
