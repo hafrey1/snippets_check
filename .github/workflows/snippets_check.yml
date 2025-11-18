@@ -1,4 +1,4 @@
-name: Cloudflare Snippets Full Auto Check
+name: Cloudflare Snippets Check (Email + API Key)
 
 on:
   schedule:
@@ -17,7 +17,8 @@ jobs:
 
       - name: Generate Snippets Status
         env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_API_EMAIL: ${{ secrets.CF_API_EMAIL }}
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
         run: |
           echo "| Domain | Zone ID | Snippets Available | Max Snippets |" > snippets_status.md
           echo "|--------|---------|-----------------|--------------|" >> snippets_status.md
@@ -27,8 +28,15 @@ jobs:
 
           while :; do
             ZONES=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?per_page=$PER_PAGE&page=$PAGE" \
-              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H "X-Auth-Email: $CF_API_EMAIL" \
+              -H "X-Auth-Key: $CF_API_KEY" \
               -H "Content-Type: application/json")
+
+            # 判断是否为空
+            if [ "$(echo "$ZONES" | jq '.result == null')" = "true" ]; then
+              echo "❌ No zones found or permission issue"
+              exit 1
+            fi
 
             COUNT=$(echo "$ZONES" | jq '.result | length')
             if [ "$COUNT" -eq 0 ]; then
@@ -40,7 +48,8 @@ jobs:
               ZONE_ID=$(echo "$zone" | jq -r '.id')
 
               RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/rulesets/capabilities" \
-                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "X-Auth-Email: $CF_API_EMAIL" \
+                -H "X-Auth-Key: $CF_API_KEY" \
                 -H "Content-Type: application/json")
 
               SNIPPETS_COUNT=$(echo "$RESPONSE" | jq -r '.result[] | select(.id=="rulesets.snippets_rule_max") | .value')
@@ -55,7 +64,6 @@ jobs:
               echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" >> snippets_status.md
             done
 
-            # 如果返回的数量小于每页数量，说明最后一页
             if [ "$COUNT" -lt "$PER_PAGE" ]; then
               break
             fi
