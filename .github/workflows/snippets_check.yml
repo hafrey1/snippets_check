@@ -98,3 +98,14 @@ jobs:
           git add snippets_status.md
           git commit -m "Update Cloudflare Snippets status [parallel max masked] [skip ci]" || echo "No changes to commit"
           git push origin HEAD
+          
+      - name: Delete workflow runs
+      # 删除工作流记录/只保留1天记录
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          retain_days: 0
+          keep_minimum_runs: 5
+
+
+          
+
