@@ -29,29 +29,21 @@
 - `CF_API_EMAIL`：你的 Cloudflare 邮箱  
 - `CF_API_KEY`：你的 Cloudflare 全局 API Key
 
-⭐打开workflow 读写权限
+⭐打开workflow 读写权限步骤：
 
-你可以限制是否允许 Fork 或其他用户触发你的 Actions。
+- 进入仓库 Settings
 
-步骤：
+- 左侧选择 Actions
 
-进入仓库 Settings
+- 在 General 标签页找到：
 
-左侧选择 Actions
+- 🔧 Workflow permissions
 
-在 General 标签页找到：
+- Read repository contents permission（默认）(运行 workflow 时只能读内容)
 
-🔧 Workflow permissions
+- Read and write permissions  (Workflow 运行时可读写仓库，例如自动提交代码)
 
-Read repository contents permission（默认）
-
-运行 workflow 时只能读内容
-
-Read and write permissions
-
-Workflow 运行时可读写仓库，例如自动提交代码
-
-选择后点 Save。
+- 选择可读写权限后点 Save。
 
 ### 2️⃣ 配置 Workflow
 
