@@ -1,0 +1,56 @@
+name: Cloudflare Snippets Auto Check
+
+on:
+  schedule:
+    - cron: '0 12 * * *'  # 每天中午12点执行
+  workflow_dispatch:
+
+jobs:
+  check_snippets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Check Snippets for all domains
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          OUTPUT="snippets_status.md"
+          echo "| Domain | Zone ID | Snippets Available | Max Snippets |" > $OUTPUT
+          echo "|--------|---------|-----------------|--------------|" >> $OUTPUT
+
+          while read -r DOMAIN; do
+            # 获取 Zone ID
+            ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H "Content-Type: application/json")
+            
+            ZONE_ID=$(echo "$ZONE_RESPONSE" | jq -r '.result[0].id')
+
+            if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" == "null" ]; then
+              echo "| $DOMAIN | - | ❌ | - |" >> $OUTPUT
+              continue
+            fi
+
+            # 查询 Snippets 权限
+            RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/rulesets/capabilities" \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H "Content-Type: application/json")
+
+            SNIPPETS_COUNT=$(echo "$RESPONSE" | jq -r '.result[] | select(.id=="rulesets.snippets_rule_max") | .value')
+
+            if [ -n "$SNIPPETS_COUNT" ]; then
+              AVAILABLE="✅"
+            else
+              AVAILABLE="❌"
+              SNIPPETS_COUNT="-"
+            fi
+
+            echo "| $DOMAIN | $ZONE_ID | $AVAILABLE | $SNIPPETS_COUNT |" >> $OUTPUT
+          done < domains.txt
+
+          echo "Results saved to $OUTPUT"
